@@ -1,2 +1,8 @@
-build/
-bin/
+.old_session.vim
+
+build
+bin
+result
+
+*.key
+*.http

@@ -15,17 +15,19 @@ DFLAGS = -DDEBUG_ENABLE=1
 FLAGS = $(CCFLAGS) $(IFLAGS) $(LDFLAGS) $(DFLAGS)
 
 .PHONY: all
-.PHONY: ytseeker
+.PHONY: bin
 .PHONY: clean
 
-all: ytseeker
+all: ytseeker/ytseeker
 
-ytseeker:
+bin/ytseeker: bin ytseeker/ytseeker.c
 	@echo "Compiling... (ytseeker)"
-	@mkdir -p bin
-	$(CC) $(FLAGS) ytseeker/ytseeker.c $(CORE_FILES) -o bin/ytseeker
+	$(CC) $(FLAGS) ytseeker/ytseeker.c -lssl $(CORE_FILES) -o bin/ytseeker
 
+bin:
+	@mkdir -p bin
 
 clean:
-	@echo "Cleaning..."
-	@rm -rf ./build
+	@echo -n "Cleaning... "
+	@rm -rf ./bin
+	@echo "Done"
