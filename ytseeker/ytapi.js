@@ -16,37 +16,28 @@ if(apikey_res.error != null)
 	process.exit(1);
 }
 const apikey = apikey_res.data;
+console.log("Successfully slurped api key");
 
-const GET_PLAYLIST_ITEMS_COUNT_URL = new URL("/youtube/v3/playlists", "https://www.googleapis.com");
-const params = new searchParams();
-params.append("key", apikey);
-params.append("part", "contentDetails"); // ,snippet
-params.append("id", PLAYLIST_ID);
-GET_PLAYLIST_ITEMS_COUNT_URL.searchParams = params
-
-// TODO: FINISH GET_PLAYLIST_ITEMS_URL
-// const GET_PLAYLIST_ITEMS_URL = new URL("/youtube/v3/playlists", "https://www.googleapis.com");
-// const params = new searchParams();
-// params.append("key", apikey);
-// params.append("part", "contentDetails"); // ,snippet
-// params.append("id", PLAYLIST_ID);
-// GET_PLAYLIST_ITEMS_COUNT_URL.searchParams = params
-
+// const url = new URL("https://www.googleapis.com/youtube/v3/playlists");
+const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+url.searchParams.append("key", apikey);
+url.searchParams.append("part", "contentDetails");
+url.searchParams.append("playlistId", PLAYLIST_ID);
 
 /* main */
 /* ------------------------------------------------------------ */
 
-getJson(GET_PLAYLIST_ITEMS_COUNT_URL)
-	.then(playlists => {
+getJson(url)
+	.then(playlist => {
 
-		if(playlists.pageInfo.totalResults != 1)
-		{
-			console.error(`Found ${playlists.pageInfo.totalResults} playlists with the same id!`)
-			process.exit(1);
-		}
+		console.log(`Found ${playlist.pageInfo.totalResults} videos in this playlist`)
 
-		const playlist = playlists.items[0];
-		console.log(`Playlist ${playlist.id} has ${playlist.contentDetails.itemCount} videos`);
+		playlist.items.forEach(video => {
+			console.log(video.contentDetails)
+		})
+
+		// const playlist = playlists.items[0];
+		// console.log(`Playlist ${playlist.id} has ${playlist.contentDetails.itemCount} videos`);
 	})
 
 
@@ -74,9 +65,14 @@ async function getJson(endpoint)
 	});
 
 	const data = await res.json();
-	console.log("------------------------------");
-	console.log(data);
-	console.log("------------------------------");
+	// console.log("------------------------------");
+	// console.log(data);
+	// console.log("------------------------------");
+
+	if(!res.ok)
+	{
+		console.error("\x1B[31mReturned not OK response\x1B[0m");
+	}
 
 	return data;
 }
