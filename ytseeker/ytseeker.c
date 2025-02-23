@@ -41,10 +41,59 @@ typedef union {
 	struct { n8 A, B, C, D; } byte;
 	n8 bytes[4];
 	n32 dword;
-} ipv4_addr;
+} IPv4_addr;
 
 
-static error ipv4_lookup(const char* hostname, ipv4_addr* addr)
+#define SB_STRINGS_LEN 32
+typedef struct {
+	char* strings[SB_STRINGS_LEN];
+	n8 string_count;
+} StringBuilder;
+
+static n64 SB_get_length(StringBuilder sb)
+{
+	n64 len = 1;
+	n8 i;
+
+	for(i = 0; i < sb.string_count; ++i)
+	{
+		len += strlen(sb.strings[i]);
+	}
+
+	return len;
+}
+
+static void SB_string_append(StringBuilder* sb, char* str)
+{
+	assert(sb->string_count < SB_STRINGS_LEN);
+	sb->strings[sb->string_count++] = str;
+}
+
+static void SB_strings_merge(StringBuilder sb, n32 outstr_len, char* outstr)
+{
+	n8 i;
+
+	n32 offset = 0;
+	n64 len = SB_get_length(sb);
+	assert(outstr_len >= len);
+
+	for(i = 0; i < sb.string_count; ++i)
+	{
+		n8 j;
+
+		char* str = sb.strings[i];
+		for(j = 0; j < strlen(str); ++j)
+		{
+			outstr[offset] = str[j];
+			offset++;
+		}
+	}
+
+	outstr[offset] = '\0';
+}
+
+
+static error ipv4_lookup(const char* hostname, IPv4_addr* addr)
 {
 	struct hostent* hostlookup = gethostbyname(hostname);
 	if(hostlookup == NULL)
@@ -61,7 +110,7 @@ static error ipv4_lookup(const char* hostname, ipv4_addr* addr)
 		return failure;
 	}
 
-	*addr = *((ipv4_addr*)hostlookup->h_addr_list[0]);
+	*addr = *((IPv4_addr*)hostlookup->h_addr_list[0]);
 
 #if DEBUG_ENABLE
 	printf("Resolved %s to %u.%u.%u.%u\n", hostname,
@@ -72,141 +121,13 @@ static error ipv4_lookup(const char* hostname, ipv4_addr* addr)
 }
 
 
-static error fetch(const char* hostname, const char* uri)
-{
-	struct sockaddr_in addr = {0};
-	ipv4_addr ipaddr = {0};
-
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if(sockfd == -1)
-	{
-		printf("ERROR:%s:%d: Could not open socket: %s\n",
-				__FILE__, __LINE__, strerror(errno));
-		return failure;
-	}
-
-	if(ipv4_lookup(hostname, &ipaddr))
-	{
-		printf("ERROR:%s:%d: (fetch) Could not lookup hostname\n",
-				__FILE__, __LINE__);
-		return failure;
-	}
-
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(80);
-	addr.sin_addr.s_addr = ipaddr.dword;
-
-	if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
-	{
-		printf("ERROR:%s:%d: (fetch) Could not connect to %u.%u.%u.%u: %s\n",
-				__FILE__, __LINE__, ipaddr.byte.A, ipaddr.byte.B,
-				ipaddr.byte.C, ipaddr.byte.D, strerror(errno));
-		return failure;
-	}
-
-	{
-		const char* msg =
-			"GET /youtube/v3/playlists HTTP/1.1\r\n"
-			"\r\n";
-
-		n64 msg_len = (n64)strlen(msg);
-		n64 totsent_b = 0;
-
-#if DEBUG_ENABLE
-		printf("------------------------------ Writing ------------------------------\n");
-#endif
-		while(totsent_b < msg_len)
-		{
-			ssize_t sent_b = write(sockfd, msg, msg_len);
-			if(sent_b == -1)
-			{
-#if DEBUG_ENABLE
-				printf("---------------------------- END Writing ----------------------------\n");
-#endif
-				printf("ERROR:%s:%d: (fetch) Could not write to socket: %s\n",
-						__FILE__, __LINE__, strerror(errno));
-				return failure;
-			}
-
-#if DEBUG_ENABLE
-			printf("%.*s", (int)sent_b, msg);
-#endif
-			totsent_b += (n64)sent_b;
-		}
-
-		if(shutdown(sockfd, SHUT_WR) == -1)
-		{
-			printf("ERROR:%s:%d: (fetch) Could not shutdown WR connection: %s\n",
-					__FILE__, __LINE__, strerror(errno));
-			return failure;
-		}
-
-#if DEBUG_ENABLE
-		printf("---------------------------- END Writing ----------------------------\n");
-#endif
-	}
-
-	{
-#define BUFF_LEN 1024
-		char buffer[BUFF_LEN] = {0};
-		ssize_t read_b = 0;
-
-		FILE* dump = fopen("read_dump.http", "w");
-		if(dump == NULL)
-		{
-			printf("ERROR:%s:%d: (fetch) Could not open dump file: %s\n",
-					__FILE__, __LINE__, strerror(errno));
-			return failure;
-		}
-
-#if DEBUG_ENABLE
-		printf("------------------------------ Reading ------------------------------\n");
-#endif
-		do {
-			read_b = recv(sockfd, buffer, BUFF_LEN, 0);
-			/* read_b = read(sockfd, buffer, BUFF_LEN); */
-			if(read_b == -1)
-			{
-#if DEBUG_ENABLE
-				printf("\n---------------------------- END Reading ----------------------------\n");
-#endif
-				printf("ERROR:%s:%d: (fetch) Could not read from socket: %s\n",
-						__FILE__, __LINE__, strerror(errno));
-				return failure;
-			}
-
-#if DEBUG_ENABLE
-			if(read_b > 0)
-			{
-				printf("%.*s", (int)read_b, buffer);
-				fprintf(dump, "%.*s", (int)read_b, buffer);
-			}
-#endif
-
-			printf("\033[31m[%d]\033[0m\n", (int)read_b);
-
-		} while(read_b > 0);
-
-#if DEBUG_ENABLE
-		printf("\n---------------------------- END Reading ----------------------------\n");
-#endif
-
-		assert(fclose(dump) == 0);
-	}
-
-	assert(close(sockfd) == 0);
-
-	(void)uri;
-	return failure;
-}
-
-static error fetchs(const char* hostname, const char* uri)
+static error fetchs(char* hostname, char* uri)
 {
 	SSL* ssl = NULL;
 	SSL_CTX* ssl_ctx = NULL;
 
 	struct sockaddr_in addr = {0};
-	ipv4_addr ipaddr = {0};
+	IPv4_addr ipaddr = {0};
 
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(sockfd == -1)
@@ -266,43 +187,28 @@ static error fetchs(const char* hostname, const char* uri)
 	}
 
 	{
-#define MSG_LEN 2048
-		char msg[MSG_LEN] = "GET ";
-		const char postfix[] =
-			" HTTP/1.1\r\n"
-			"\r\n"
-			"Accept: application/json\r\n"
-			"User-Agent: urmom\r\n";
-
-		n64 i;
+#define REQ_MAX_LEN 2048
+		char request[REQ_MAX_LEN] = {0};
+		StringBuilder req_builder = {0};
 
 		n64 totsent_b = 0;
-		n64 msg_len;
+		n64 req_len;
 
-		assert(4+strlen(hostname)+strlen(postfix) < MSG_LEN);
-		for(i = 0; i < strlen(hostname); ++i)
-		{
-			msg[4+i] = hostname[i];
-		}
-		assert(4+strlen(hostname)+strlen(uri)+strlen(postfix) < MSG_LEN);
-		for(i = 0; i < strlen(uri); ++i)
-		{
-			msg[4+strlen(hostname)+i] = uri[i];
-		}
-		for(i = 0; i < strlen(postfix); ++i)
-		{
-			msg[4+strlen(hostname)+strlen(uri)+i] = postfix[i];
-		}
+		SB_string_append(&req_builder, "GET ");
+		SB_string_append(&req_builder, hostname);
+		SB_string_append(&req_builder, uri);
+		SB_string_append(&req_builder, " HTTP/1.1\r\n\r\nAccept: application/json\r\nUser-Agent: urmom\r\n");
+		req_len = SB_get_length(req_builder);
 
-		msg_len = (n64)strlen(msg);
+		SB_strings_merge(req_builder, REQ_MAX_LEN, request);
 
 #if DEBUG_ENABLE
 		printf("------------------------------ Writing ------------------------------\n");
 #endif
-		while(totsent_b < msg_len)
+		while(totsent_b < req_len)
 		{
 			size_t sent_b = 0;
-			if(SSL_write_ex(ssl, msg, msg_len, &sent_b) == 0)
+			if(SSL_write_ex(ssl, request, req_len, &sent_b) == 0)
 			{
 #if DEBUG_ENABLE
 				printf("---------------------------- END Writing ----------------------------\n");
@@ -315,7 +221,7 @@ static error fetchs(const char* hostname, const char* uri)
 			}
 
 #if DEBUG_ENABLE
-			printf("%.*s", (int)sent_b, msg);
+			printf("%.*s", (int)sent_b, request);
 #endif
 			totsent_b += sent_b;
 		}
@@ -411,60 +317,56 @@ static error fetchs(const char* hostname, const char* uri)
 	return failure;
 }
 
-int main(void)
+static i32 file_slurp(char* fpath, i32 buff_len, char* buffer)
 {
-	int i;
+	i32 i;
 
-	#define APIKEY_LEN 39
-	char apikey[APIKEY_LEN + 1] = {0};
-
-	FILE* apikey_file = fopen("youtube-api.key", "r");
-	if(apikey_file == NULL)
+	FILE* file = fopen(fpath, "r");
+	if(file == NULL)
 	{
-		printf("ERROR:%s:%d: Could not open apikey file: %s\n",
-				__FILE__, __LINE__, strerror(errno));
-		return failure;
+		printf("ERROR:%s:%d: Could not open file %s: %s\n",
+				__FILE__, __LINE__, fpath, strerror(errno));
+		return -1;
 	}
 
-	for(i = 0; i < APIKEY_LEN; ++i)
+	for(i = 0; i < buff_len; ++i)
 	{
-		i32 c = fgetc(apikey_file);
+		i32 c = fgetc(file);
+
 		if(c == EOF)
 		{
-			printf("ERROR:%s:%d: Api key is incomplete, read %d chars out of %d\n",
-					__FILE__, __LINE__, i, APIKEY_LEN-1);
-			return failure;
+			fclose(file);
+			return i;
 		}
-		apikey[i] = (char)c;
+
+		buffer[i] = (char)c;
 	}
 
+	fclose(file);
+	return i;
+}
+
+int main(void)
+{
+#define APIKEY_LEN 39
+	char apikey[APIKEY_LEN + 1] = {0};
+
+#define URI_LEN 26+APIKEY_LEN+58+1
+	char uri[URI_LEN] = {0};
+
+	StringBuilder uri_builder = {0};
+
+	assert(file_slurp("youtube-api.key", APIKEY_LEN, apikey) == APIKEY_LEN);
+
+	SB_string_append(&uri_builder, "/youtube/v3/playlists?key=");
+	SB_string_append(&uri_builder, apikey);
+	SB_string_append(&uri_builder, "&id=PLd23Y4uu3SslprRLNuBitQft8kb4a7R3q&part=contentDetails");
+	SB_strings_merge(uri_builder, URI_LEN, uri);
+
+	if(fetchs("www.googleapis.com", uri))
 	{
-		char uri[26+APIKEY_LEN+58+1] = {0};
-		for(i = 0; i < 26; ++i)
-		{
-			char str[] = "/youtube/v3/playlists?key=";
-			uri[i] = str[i];
-		}
-
-		for(i = 0; i < APIKEY_LEN; ++i)
-		{
-			uri[26+i] = apikey[i];
-		}
-
-		for(i = 0; i < 58; ++i)
-		{
-			char str[] = "&id=PLd23Y4uu3SslprRLNuBitQft8kb4a7R3q&part=contentDetails";
-			uri[26+APIKEY_LEN+i] = str[i];
-		}
-
-		if(fetchs("www.googleapis.com", uri))
-		{
-			return failure;
-		}
+		return failure;
 	}
-
-	(void)fetch;
-	(void)fetchs;
 
 	return success;
 }
