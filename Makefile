@@ -8,7 +8,7 @@ CCFLAGS = -xc -std=c89 -ansi -pedantic-errors -pedantic \
 		 -Wcast-qual -Wcast-align -Wstrict-prototypes \
 		 -Wmissing-prototypes -Wconversion -g
 
-IFLAGS = -I./ -I./lib/include -I../include
+IFLAGS = -I./lib/include
 LDFLAGS = -L./
 
 DFLAGS = -DDEBUG_ENABLE=1
@@ -18,11 +18,16 @@ FLAGS = $(CCFLAGS) $(IFLAGS) $(LDFLAGS) $(DFLAGS)
 .PHONY: bin
 .PHONY: clean
 
-all: ytseeker/ytseeker
+all: bin/ytseeker
+all-tests: bin/test-jsoncast
 
 bin/ytseeker: bin ytseeker/ytseeker.c
 	@echo "Compiling... (ytseeker)"
 	$(CC) $(FLAGS) ytseeker/ytseeker.c -lssl $(CORE_FILES) -o bin/ytseeker
+
+bin/test-jsoncast: bin lib/jsoncast/test.c lib/include/jsoncast.h lib/include/ctypes.h
+	@echo "Compiling... (test-jsoncast)"
+	$(CC) $(FLAGS) lib/jsoncast/test.c $(CORE_FILES) -o bin/test-jsoncast
 
 bin:
 	@mkdir -p bin

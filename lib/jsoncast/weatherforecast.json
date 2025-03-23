@@ -1,0 +1,18 @@
+{
+	"date": 20250225173245,
+	"today": {
+		"status": "sunny",
+		"humidity": 0.6,
+		"temperature": 32.61,
+	},
+	"sensors": {
+		"humidity_online": true,
+		"temperature_online": false,
+		"errors": null,
+	},
+	"record": [
+		{ "day_off": -1, "status": "sunny"  },
+		{ "day_off": -2, "status": "cloudy" },
+		{ "day_off": -3, "status": "cloudy" }
+	]
+}
